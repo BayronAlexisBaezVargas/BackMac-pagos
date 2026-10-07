@@ -1,3 +1,32 @@
 spring:
   application:
-    name: pagos
+    name: ms-pagos
+  datasource:
+    url: jdbc:postgresql://localhost:5436/pagos_db
+    username: springuser
+    password: springpassword
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: https://login.microsoftonline.com/c59a4270-0c88-46d9-a708-38639783c0b1/discovery/v2.0/keys
+          audiences:
+            - 24a66d14-c9c3-41c1-a93b-7e5926389c91
+            - api://24a66d14-c9c3-41c1-a93b-7e5926389c91
+
+server:
+  port: 8084
+
+servicios:
+  pedidos:
+    url: ${PEDIDOS_SERVICE_URL:http://localhost:8083/api/pedidos}
+  notificaciones:
+    url: ${NOTIFICACIONES_SERVICE_URL:http://localhost:8085/api/notificaciones}
