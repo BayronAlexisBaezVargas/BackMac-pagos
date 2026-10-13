@@ -9,6 +9,8 @@ import backmac.pagos.entity.Pago;
 import backmac.pagos.repository.PagoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,13 @@ public class PagoService {
     private final PagoRepository pagoRepository;
     private final PedidoClient pedidoClient;
     private final NotificacionClient notificacionClient;
+    private final RabbitTemplate rabbitTemplate;
+
+    @Value("${app.rabbitmq.exchange:pedidos360.exchange}")
+    private String exchangeName;
+
+    @Value("${app.rabbitmq.routing-key-notificaciones:notificaciones.routing.key}")
+    private String routingKeyNotif;
 
     @Transactional
     public Pago procesarPago(ProcesarPagoDTO dto, String usuarioId, String tokenHeader) {
@@ -45,18 +54,24 @@ public class PagoService {
                 log.error("No se pudo actualizar el estado del pedido {}: {}", dto.getPedidoId(), e.getMessage());
             }
 
-            // 2. Notificar a ms-notificaciones: generar alerta para el usuario
+            // 2. Notificar a RabbitMQ de forma asíncrona desacoplada
+            NotificacionDTO notif = new NotificacionDTO(
+                usuarioId,
+                dto.getPedidoId(),
+                "PAGO_APROBADO",
+                "Tu pago de $" + dto.getMonto() + " fue aprobado. Tu pedido #" + dto.getPedidoId() + " esta en preparacion."
+            );
             try {
-                NotificacionDTO notif = new NotificacionDTO(
-                    usuarioId,
-                    dto.getPedidoId(),
-                    "PAGO_APROBADO",
-                    "Tu pago de $" + dto.getMonto() + " fue aprobado. Tu pedido #" + dto.getPedidoId() + " esta en preparacion."
-                );
-                notificacionClient.enviar(notif, tokenHeader);
-                log.info("Notificacion PAGO_APROBADO enviada al usuario {}", usuarioId);
+                rabbitTemplate.convertAndSend(exchangeName, routingKeyNotif, notif);
+                log.info("[RABBITMQ-PRODUCER] Notificacion PAGO_APROBADO enviada a RabbitMQ para usuario {}", usuarioId);
             } catch (Exception e) {
-                log.error("No se pudo enviar notificacion: {}", e.getMessage());
+                log.warn("[RABBITMQ-PRODUCER] Error enviando a RabbitMQ: {}. Usando fallback Feign...", e.getMessage());
+                try {
+                    notificacionClient.enviar(notif, tokenHeader);
+                    log.info("Notificacion enviada por fallback Feign al usuario {}", usuarioId);
+                } catch (Exception ex) {
+                    log.error("Fallo envio por Feign: {}", ex.getMessage());
+                }
             }
 
             return pagoGuardado;
@@ -65,16 +80,22 @@ public class PagoService {
             Pago pagoGuardado = pagoRepository.save(pago);
 
             // Notificar rechazo
+            NotificacionDTO notif = new NotificacionDTO(
+                usuarioId,
+                dto.getPedidoId(),
+                "PAGO_RECHAZADO",
+                "Tu pago fue rechazado. Por favor intenta con otro metodo de pago."
+            );
             try {
-                NotificacionDTO notif = new NotificacionDTO(
-                    usuarioId,
-                    dto.getPedidoId(),
-                    "PAGO_RECHAZADO",
-                    "Tu pago fue rechazado. Por favor intenta con otro metodo de pago."
-                );
-                notificacionClient.enviar(notif, tokenHeader);
+                rabbitTemplate.convertAndSend(exchangeName, routingKeyNotif, notif);
+                log.info("[RABBITMQ-PRODUCER] Notificacion PAGO_RECHAZADO enviada a RabbitMQ para usuario {}", usuarioId);
             } catch (Exception e) {
-                log.error("No se pudo enviar notificacion de rechazo: {}", e.getMessage());
+                log.warn("[RABBITMQ-PRODUCER] Error enviando a RabbitMQ: {}. Usando fallback Feign...", e.getMessage());
+                try {
+                    notificacionClient.enviar(notif, tokenHeader);
+                } catch (Exception ex) {
+                    log.error("Fallo envio por Feign: {}", ex.getMessage());
+                }
             }
 
             return pagoGuardado;

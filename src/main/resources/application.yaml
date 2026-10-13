@@ -2,9 +2,9 @@ spring:
   application:
     name: ms-pagos
   datasource:
-    url: jdbc:postgresql://localhost:5436/pagos_db
-    username: springuser
-    password: springpassword
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5436/pagos_db}
+    username: ${SPRING_DATASOURCE_USERNAME:springuser}
+    password: ${SPRING_DATASOURCE_PASSWORD:springpassword}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -21,6 +21,11 @@ spring:
           audiences:
             - 24a66d14-c9c3-41c1-a93b-7e5926389c91
             - api://24a66d14-c9c3-41c1-a93b-7e5926389c91
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:admin123}
 
 server:
   port: 8084
@@ -30,3 +35,8 @@ servicios:
     url: ${PEDIDOS_SERVICE_URL:http://localhost:8083/api/pedidos}
   notificaciones:
     url: ${NOTIFICACIONES_SERVICE_URL:http://localhost:8085/api/notificaciones}
+
+app:
+  rabbitmq:
+    exchange: pedidos360.exchange
+    routing-key-notificaciones: notificaciones.routing.key
